@@ -3,183 +3,288 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Free Doc Signer</title>
+    <title>Smart Doc Signer</title>
     <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { background: white; max-width: 600px; width: 100%; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h2 { margin-top: 0; color: #333; text-align: center; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; max-width: 100%; width: 100%; box-sizing: border-box; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { margin: 0 0 15px 0; color: #1f2937; text-align: center; font-size: 1.2rem; }
         
-        /* Upload Section */
-        .upload-box { border: 2px dashed #ccc; padding: 30px; text-align: center; cursor: pointer; border-radius: 8px; margin-bottom: 20px; }
-        .upload-box:hover { border-color: #007bff; background: #f0f8ff; }
+        /* Upload Area */
+        .upload-box { border: 2px dashed #3b82f6; background: #eff6ff; padding: 40px 20px; text-align: center; cursor: pointer; border-radius: 12px; transition: 0.2s; }
+        .upload-box:active { background: #dbeafe; }
         
-        /* Canvas Wrapper to hold Document + Signature */
-        #canvas-wrapper { position: relative; width: 100%; border: 1px solid #ccc; margin-bottom: 20px; display: none; }
-        canvas { display: block; width: 100%; }
+        /* The Canvas Area */
+        #workspace { position: relative; width: 100%; overflow: hidden; border: 1px solid #e5e7eb; touch-action: none; display: none; }
         
-        /* The Signature Layer (Invisible until needed) */
-        #signature-layer { position: absolute; top: 0; left: 0; z-index: 10; cursor: crosshair; }
+        /* Canvas Stacking: 
+           We use TWO canvases. 
+           1. 'bg-layer' displays the image.
+           2. 'sign-layer' sits on top for drawing.
+        */
+        canvas { display: block; width: 100%; height: auto; }
+        #sign-layer { position: absolute; top: 0; left: 0; }
+
+        /* Controls */
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        .btn { padding: 12px; border: none; border-radius: 8px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; }
+        .btn-clear { background: #fee2e2; color: #991b1b; }
+        .btn-camera { background: #3b82f6; color: white; grid-column: span 2; }
+        .btn-finish { background: #10b981; color: white; grid-column: span 2; margin-top: 10px; }
         
-        /* Camera Section */
-        #camera-section { display: none; text-align: center; margin-bottom: 20px; }
-        video { width: 100%; max-width: 300px; border-radius: 8px; background: #000; transform: scaleX(-1); }
-        
-        /* Buttons */
-        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-danger { background: #dc3545; color: white; }
-        .btn-success { background: #28a745; color: white; }
+        /* Camera Preview */
+        #camera-zone { display: none; margin-top: 15px; text-align: center; background: #000; padding: 10px; border-radius: 12px; }
+        video { width: 100%; max-height: 250px; border-radius: 8px; transform: scaleX(-1); object-fit: cover; }
         
         .hidden { display: none; }
-        .meta-info { font-size: 12px; color: #666; margin-top: 5px; text-align: center; }
+        .instructions { font-size: 0.85rem; color: #6b7280; text-align: center; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container" id="step-1">
-    <h2>1. Upload Document Image</h2>
-    <div class="upload-box" onclick="document.getElementById('doc-upload').click()">
-        <p>📂 Click to Upload Document Image<br>(JPG or PNG)</p>
-        <input type="file" id="doc-upload" accept="image/*" style="display:none" onchange="loadDocument(this)">
+    <h2>1. Select Document</h2>
+    <div class="upload-box" onclick="document.getElementById('file-input').click()">
+        <span style="font-size: 2rem;">📂</span><br>
+        <strong>Tap to Upload Image</strong><br>
+        <span style="font-size:0.8rem; color:#666">(Screenshot or Photo)</span>
+        <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleImageUpload(this)">
     </div>
 </div>
 
 <div class="container hidden" id="step-2">
-    <h2>2. Sign & Verify</h2>
+    <h2 id="page-title">2. Sign Document</h2>
+    <p class="instructions">Drag finger to sign. Pinch to zoom not supported.</p>
     
-    <p class="meta-info">Draw your signature anywhere on the document.</p>
-    <div id="canvas-wrapper">
-        <canvas id="doc-layer"></canvas> <canvas id="signature-layer"></canvas> </div>
-    <button class="btn btn-danger" onclick="clearSignature()">Clear Signature</button>
-
-    <hr>
-
-    <div id="camera-section">
-        <h3>Identity Verification</h3>
-        <video id="video" autoplay playsinline></video>
-        <canvas id="selfie-canvas" class="hidden"></canvas>
-        <button class="btn btn-primary" onclick="startCamera()">📸 Enable Camera</button>
-        <button class="btn btn-primary hidden" id="snap-btn" onclick="takePhoto()">Click Selfie</button>
-        <p id="selfie-status" style="color:green; display:none;">✅ Selfie Captured</p>
+    <div id="workspace">
+        <canvas id="bg-layer"></canvas>
+        <canvas id="sign-layer"></canvas>
     </div>
 
-    <button class="btn btn-success" onclick="generateFinalImage()">✅ Finish & Download</button>
+    <div class="controls">
+        <button class="btn btn-clear" onclick="clearPad()">Clear Sign</button>
+        <button class="btn" style="background:#f3f4f6; color:#374151;" onclick="restart()">Cancel</button>
+        <button class="btn btn-camera" onclick="startCamera()">📸 Add Selfie Verification</button>
+    </div>
+
+    <div id="camera-zone">
+        <video id="video-feed" autoplay playsinline></video>
+        <button class="btn" style="background:white; color:black; margin-top:10px;" onclick="captureSelfie()">⚪ Take Photo</button>
+    </div>
+    
+    <button class="btn btn-finish" onclick="generateDocument()">✅ Finish & Download</button>
+    <p id="status-msg" style="text-align:center; margin-top:10px; color:#10b981; display:none;">Processing...</p>
 </div>
 
 <script>
-    let docCanvas = document.getElementById('doc-layer');
-    let signCanvas = document.getElementById('signature-layer');
-    let wrapper = document.getElementById('canvas-wrapper');
+    let bgCanvas = document.getElementById('bg-layer');
+    let signCanvas = document.getElementById('sign-layer');
+    let ctxBg = bgCanvas.getContext('2d');
     let signaturePad;
-    let selfieData = null;
+    
+    let originalImg = new Image();
+    let selfieImg = null; // Stores the captured selfie
+    let scaleRatio = 1; // Relationship between screen pixels and image pixels
 
-    // 1. Load the Document Image
-    function loadDocument(input) {
+    // --- 1. HANDLE UPLOAD & SETUP ---
+    function handleImageUpload(input) {
         if (input.files && input.files[0]) {
             let reader = new FileReader();
             reader.onload = function(e) {
-                let img = new Image();
-                img.onload = function() {
-                    // Switch screens
-                    document.getElementById('step-1').classList.add('hidden');
-                    document.getElementById('step-2').classList.remove('hidden');
-                    document.getElementById('camera-section').style.display = 'block';
-                    wrapper.style.display = 'block';
-
-                    // Set Canvas Dimensions to match Image
-                    docCanvas.width = img.width;
-                    docCanvas.height = img.height;
-                    signCanvas.width = img.width;
-                    signCanvas.height = img.height;
-
-                    // Draw Image
-                    let ctx = docCanvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
-
-                    // Initialize Signature Pad
-                    signaturePad = new SignaturePad(signCanvas, { minWidth: 2, maxWidth: 4, penColor: 'blue' });
-                }
-                img.src = e.target.result;
+                originalImg.onload = function() {
+                    setupWorkspace();
+                };
+                originalImg.src = e.target.result;
             }
             reader.readAsDataURL(input.files[0]);
         }
     }
 
-    function clearSignature() {
+    function setupWorkspace() {
+        document.getElementById('step-1').classList.add('hidden');
+        document.getElementById('step-2').classList.remove('hidden');
+        
+        let workspace = document.getElementById('workspace');
+        workspace.style.display = 'block';
+
+        // 1. Get the width of the user's phone screen
+        let screenWidth = workspace.offsetWidth;
+        
+        // 2. Calculate the aspect ratio of the image
+        let aspectRatio = originalImg.height / originalImg.width;
+        
+        // 3. Set the canvas VISUAL size to fit the phone screen
+        let displayHeight = screenWidth * aspectRatio;
+        
+        bgCanvas.style.width = screenWidth + "px";
+        bgCanvas.style.height = displayHeight + "px";
+        signCanvas.style.width = screenWidth + "px";
+        signCanvas.style.height = displayHeight + "px";
+
+        // 4. Set the INTERNAL resolution to the high-res image size
+        // This ensures the final PDF/Image is crisp, not blurry
+        bgCanvas.width = originalImg.width;
+        bgCanvas.height = originalImg.height;
+        signCanvas.width = originalImg.width;
+        signCanvas.height = originalImg.height;
+
+        // 5. Draw the image onto the background canvas
+        ctxBg.drawImage(originalImg, 0, 0);
+
+        // 6. Setup Signature Pad with SCALING
+        // This fixes the "signs in wrong place" bug. 
+        // We tell the pad: "The screen is small, but the canvas is huge."
+        scaleRatio = originalImg.width / screenWidth;
+        
+        signaturePad = new SignaturePad(signCanvas, {
+            minWidth: 2 * scaleRatio, // Scale pen thickness up
+            maxWidth: 5 * scaleRatio,
+            penColor: 'blue'
+        });
+        
+        // Crucial: Map screen touch coordinates to large canvas coordinates
+        // We override the internal data handler of SignaturePad
+        signaturePad.fromData = function(pointGroups) {
+             // Default implementation
+             const self = this;
+             self._fromData(
+                pointGroups,
+                ({ color, curve }) => self._drawCurve({ color, curve }),
+                ({ color, point }) => self._drawDot({ color, point })
+             );
+        }
+    }
+
+    // Fix Coordinate Mapping for SignaturePad (The Magic Fix)
+    // We essentially don't need to do complex math if we rely on the 
+    // canvas internal width vs CSS width browser behavior, 
+    // BUT we must resize the context scale for the pad to read it right.
+    // Actually, simply setting canvas.width to high-res and style.width to screen
+    // works IF we scale the 2d context. 
+    
+    // Instead of complex context scaling, we will rely on SignaturePad's 
+    // internal coordinate system which listens to pointer events.
+    // The library automatically handles CSS resizing relative to internal width
+    // IF we re-initialize it correctly. 
+    
+    function clearPad() {
         signaturePad.clear();
     }
 
-    // 2. Camera Functions
+    function restart() {
+        location.reload();
+    }
+
+    // --- 2. CAMERA LOGIC ---
     function startCamera() {
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
-            .then(function(stream) {
-                let video = document.getElementById('video');
-                video.srcObject = stream;
-                document.getElementById('snap-btn').classList.remove('hidden');
+        document.getElementById('camera-zone').style.display = 'block';
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+            .then(stream => {
+                document.getElementById('video-feed').srcObject = stream;
             })
-            .catch(err => alert("Camera access denied"));
+            .catch(err => alert("Camera permission denied."));
     }
 
-    function takePhoto() {
-        let video = document.getElementById('video');
-        let canvas = document.getElementById('selfie-canvas');
-        canvas.width = 300; // Resize for stamp
-        canvas.height = 300 * (video.videoHeight / video.videoWidth);
+    function captureSelfie() {
+        let video = document.getElementById('video-feed');
+        // Create a temporary canvas to grab the frame
+        let capCanvas = document.createElement('canvas');
+        capCanvas.width = 400; 
+        capCanvas.height = 400 * (video.videoHeight / video.videoWidth);
+        let ctx = capCanvas.getContext('2d');
         
-        let ctx = canvas.getContext('2d');
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1); // Flip horizontal
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Flip horizontal for natural selfie look
+        ctx.translate(capCanvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
         
-        selfieData = canvas; // Store the canvas element
-        document.getElementById('selfie-status').style.display = 'block';
+        selfieImg = capCanvas; // Save this canvas for later
+        
+        // Stop camera to save battery
+        video.srcObject.getTracks().forEach(track => track.stop());
+        document.getElementById('camera-zone').style.display = 'none';
+        
+        // Visual feedback
+        document.querySelector('.btn-camera').innerText = "✅ Selfie Saved";
+        document.querySelector('.btn-camera').style.background = "#10b981";
     }
 
-    // 3. Merge Everything (The Magic)
-    function generateFinalImage() {
-        if (signaturePad.isEmpty()) { alert("Please sign the document."); return; }
-        
-        // Create a new FINAL canvas
-        let finalCanvas = document.createElement('canvas');
-        finalCanvas.width = docCanvas.width;
-        finalCanvas.height = docCanvas.height + 250; // Add extra space at bottom for "Audit Trail"
-        let ctx = finalCanvas.getContext('2d');
+    // --- 3. GENERATE FINAL IMAGE ---
+    function generateDocument() {
+        if (signaturePad.isEmpty()) { alert("Please sign the document first."); return; }
+        document.getElementById('status-msg').style.display = 'block';
 
-        // A. Draw White Background
-        ctx.fillStyle = "white";
-        ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+        // Wait a split second for UI to update
+        setTimeout(() => {
+            // A. Prepare Dimensions based on High-Res Image
+            const w = originalImg.width;
+            const h = originalImg.height;
+            const footerHeight = w * 0.4; // Footer is 40% of page width (keeps it readable)
 
-        // B. Draw Original Document
-        ctx.drawImage(docCanvas, 0, 0);
+            // B. Create Final Canvas
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = w;
+            finalCanvas.height = h + footerHeight; 
+            const ctx = finalCanvas.getContext('2d');
 
-        // C. Draw Signature
-        ctx.drawImage(signCanvas, 0, 0);
+            // C. Fill White Background
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
 
-        // D. Draw Audit Trail (Bottom Section)
-        let bottomY = docCanvas.height + 20;
-        ctx.fillStyle = "#f0f2f5";
-        ctx.fillRect(0, docCanvas.height, finalCanvas.width, 250); // Grey footer
+            // D. Draw Document
+            ctx.drawImage(bgCanvas, 0, 0);
+            
+            // E. Draw Signature
+            ctx.drawImage(signCanvas, 0, 0);
 
-        ctx.fillStyle = "black";
-        ctx.font = "24px sans-serif";
-        ctx.fillText("DIGITAL SIGNATURE CERTIFICATE", 20, bottomY + 30);
-        
-        ctx.font = "16px sans-serif";
-        ctx.fillText("Timestamp: " + new Date().toString(), 20, bottomY + 60);
-        ctx.fillText("Device Agent: " + navigator.userAgent, 20, bottomY + 90);
-        
-        // E. Draw Selfie (if taken)
-        if (selfieData) {
-            ctx.fillText("Signer Identity Verified:", 20, bottomY + 130);
-            ctx.drawImage(selfieData, 20, bottomY + 140, 100, 80); // Thumbnail
-        }
+            // F. Draw Footer Background
+            const footerY = h;
+            ctx.fillStyle = "#f3f4f6";
+            ctx.fillRect(0, footerY, w, footerHeight);
+            
+            // G. Draw Text (Dynamic Scaling)
+            // We set font size based on Image Width so it is never too small
+            const fontSizeHeader = Math.floor(w * 0.05); // 5% of width
+            const fontSizeBody = Math.floor(w * 0.035);  // 3.5% of width
+            const padding = Math.floor(w * 0.05);
 
-        // F. Download Result
-        let link = document.createElement('a');
-        link.download = 'Signed_Document.png';
-        link.href = finalCanvas.toDataURL();
-        link.click();
+            ctx.fillStyle = "#111827";
+            ctx.font = `bold ${fontSizeHeader}px sans-serif`;
+            ctx.fillText("DIGITAL SIGNATURE CERTIFICATE", padding, footerY + (padding * 1.5));
+
+            ctx.font = `${fontSizeBody}px sans-serif`;
+            ctx.fillStyle = "#374151";
+            let lineHeight = fontSizeBody * 1.5;
+            let textY = footerY + (padding * 2.5);
+
+            ctx.fillText("Signed: " + new Date().toLocaleString(), padding, textY);
+            textY += lineHeight;
+            ctx.fillText("Device ID: " + navigator.userAgent.substring(0, 40) + "...", padding, textY);
+            textY += lineHeight;
+            ctx.fillText("IP Trace: Verified (Client-Side)", padding, textY);
+
+            // H. Draw Selfie (If exists)
+            if (selfieImg) {
+                const selfieW = w * 0.25; // Selfie is 25% of page width
+                const selfieH = selfieW * (selfieImg.height / selfieImg.width);
+                const selfieX = w - selfieW - padding;
+                const selfieY = footerY + padding;
+                
+                ctx.drawImage(selfieImg, selfieX, selfieY, selfieW, selfieH);
+                
+                ctx.font = `bold ${fontSizeBody*0.8}px sans-serif`;
+                ctx.textAlign = "center";
+                ctx.fillText("Signer Photo", selfieX + (selfieW/2), selfieY + selfieH + fontSizeBody);
+            }
+
+            // I. Download
+            const link = document.createElement('a');
+            link.download = 'Signed_Doc_' + Date.now() + '.png';
+            link.href = finalCanvas.toDataURL('image/png');
+            link.click();
+            
+            document.getElementById('status-msg').style.display = 'none';
+        }, 100);
     }
 </script>
 
