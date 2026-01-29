@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Free Doc Signer</title>
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; max-width: 600px; width: 100%; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #333; text-align: center; }
+        
+        /* Upload Section */
+        .upload-box { border: 2px dashed #ccc; padding: 30px; text-align: center; cursor: pointer; border-radius: 8px; margin-bottom: 20px; }
+        .upload-box:hover { border-color: #007bff; background: #f0f8ff; }
+        
+        /* Canvas Wrapper to hold Document + Signature */
+        #canvas-wrapper { position: relative; width: 100%; border: 1px solid #ccc; margin-bottom: 20px; display: none; }
+        canvas { display: block; width: 100%; }
+        
+        /* The Signature Layer (Invisible until needed) */
+        #signature-layer { position: absolute; top: 0; left: 0; z-index: 10; cursor: crosshair; }
+        
+        /* Camera Section */
+        #camera-section { display: none; text-align: center; margin-bottom: 20px; }
+        video { width: 100%; max-width: 300px; border-radius: 8px; background: #000; transform: scaleX(-1); }
+        
+        /* Buttons */
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        
+        .hidden { display: none; }
+        .meta-info { font-size: 12px; color: #666; margin-top: 5px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="step-1">
+    <h2>1. Upload Document Image</h2>
+    <div class="upload-box" onclick="document.getElementById('doc-upload').click()">
+        <p>📂 Click to Upload Document Image<br>(JPG or PNG)</p>
+        <input type="file" id="doc-upload" accept="image/*" style="display:none" onchange="loadDocument(this)">
+    </div>
+</div>
+
+<div class="container hidden" id="step-2">
+    <h2>2. Sign & Verify</h2>
+    
+    <p class="meta-info">Draw your signature anywhere on the document.</p>
+    <div id="canvas-wrapper">
+        <canvas id="doc-layer"></canvas> <canvas id="signature-layer"></canvas> </div>
+    <button class="btn btn-danger" onclick="clearSignature()">Clear Signature</button>
+
+    <hr>
+
+    <div id="camera-section">
+        <h3>Identity Verification</h3>
+        <video id="video" autoplay playsinline></video>
+        <canvas id="selfie-canvas" class="hidden"></canvas>
+        <button class="btn btn-primary" onclick="startCamera()">📸 Enable Camera</button>
+        <button class="btn btn-primary hidden" id="snap-btn" onclick="takePhoto()">Click Selfie</button>
+        <p id="selfie-status" style="color:green; display:none;">✅ Selfie Captured</p>
+    </div>
+
+    <button class="btn btn-success" onclick="generateFinalImage()">✅ Finish & Download</button>
+</div>
+
+<script>
+    let docCanvas = document.getElementById('doc-layer');
+    let signCanvas = document.getElementById('signature-layer');
+    let wrapper = document.getElementById('canvas-wrapper');
+    let signaturePad;
+    let selfieData = null;
+
+    // 1. Load the Document Image
+    function loadDocument(input) {
+        if (input.files && input.files[0]) {
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                let img = new Image();
+                img.onload = function() {
+                    // Switch screens
+                    document.getElementById('step-1').classList.add('hidden');
+                    document.getElementById('step-2').classList.remove('hidden');
+                    document.getElementById('camera-section').style.display = 'block';
+                    wrapper.style.display = 'block';
+
+                    // Set Canvas Dimensions to match Image
+                    docCanvas.width = img.width;
+                    docCanvas.height = img.height;
+                    signCanvas.width = img.width;
+                    signCanvas.height = img.height;
+
+                    // Draw Image
+                    let ctx = docCanvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+
+                    // Initialize Signature Pad
+                    signaturePad = new SignaturePad(signCanvas, { minWidth: 2, maxWidth: 4, penColor: 'blue' });
+                }
+                img.src = e.target.result;
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    function clearSignature() {
+        signaturePad.clear();
+    }
+
+    // 2. Camera Functions
+    function startCamera() {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+            .then(function(stream) {
+                let video = document.getElementById('video');
+                video.srcObject = stream;
+                document.getElementById('snap-btn').classList.remove('hidden');
+            })
+            .catch(err => alert("Camera access denied"));
+    }
+
+    function takePhoto() {
+        let video = document.getElementById('video');
+        let canvas = document.getElementById('selfie-canvas');
+        canvas.width = 300; // Resize for stamp
+        canvas.height = 300 * (video.videoHeight / video.videoWidth);
+        
+        let ctx = canvas.getContext('2d');
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1); // Flip horizontal
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        selfieData = canvas; // Store the canvas element
+        document.getElementById('selfie-status').style.display = 'block';
+    }
+
+    // 3. Merge Everything (The Magic)
+    function generateFinalImage() {
+        if (signaturePad.isEmpty()) { alert("Please sign the document."); return; }
+        
+        // Create a new FINAL canvas
+        let finalCanvas = document.createElement('canvas');
+        finalCanvas.width = docCanvas.width;
+        finalCanvas.height = docCanvas.height + 250; // Add extra space at bottom for "Audit Trail"
+        let ctx = finalCanvas.getContext('2d');
+
+        // A. Draw White Background
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+        // B. Draw Original Document
+        ctx.drawImage(docCanvas, 0, 0);
+
+        // C. Draw Signature
+        ctx.drawImage(signCanvas, 0, 0);
+
+        // D. Draw Audit Trail (Bottom Section)
+        let bottomY = docCanvas.height + 20;
+        ctx.fillStyle = "#f0f2f5";
+        ctx.fillRect(0, docCanvas.height, finalCanvas.width, 250); // Grey footer
+
+        ctx.fillStyle = "black";
+        ctx.font = "24px sans-serif";
+        ctx.fillText("DIGITAL SIGNATURE CERTIFICATE", 20, bottomY + 30);
+        
+        ctx.font = "16px sans-serif";
+        ctx.fillText("Timestamp: " + new Date().toString(), 20, bottomY + 60);
+        ctx.fillText("Device Agent: " + navigator.userAgent, 20, bottomY + 90);
+        
+        // E. Draw Selfie (if taken)
+        if (selfieData) {
+            ctx.fillText("Signer Identity Verified:", 20, bottomY + 130);
+            ctx.drawImage(selfieData, 20, bottomY + 140, 100, 80); // Thumbnail
+        }
+
+        // F. Download Result
+        let link = document.createElement('a');
+        link.download = 'Signed_Document.png';
+        link.href = finalCanvas.toDataURL();
+        link.click();
+    }
+</script>
+
+</body>
+</html>
