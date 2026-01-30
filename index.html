@@ -3,288 +3,252 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Smart Doc Signer</title>
-    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+    <title>Pro Doc Signer</title>
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
-        .container { background: white; max-width: 100%; width: 100%; box-sizing: border-box; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        h2 { margin: 0 0 15px 0; color: #1f2937; text-align: center; font-size: 1.2rem; }
+        /* RESET & BASICS */
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, sans-serif; background: #f3f4f6; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
         
-        /* Upload Area */
-        .upload-box { border: 2px dashed #3b82f6; background: #eff6ff; padding: 40px 20px; text-align: center; cursor: pointer; border-radius: 12px; transition: 0.2s; }
-        .upload-box:active { background: #dbeafe; }
-        
-        /* The Canvas Area */
-        #workspace { position: relative; width: 100%; overflow: hidden; border: 1px solid #e5e7eb; touch-action: none; display: none; }
-        
-        /* Canvas Stacking: 
-           We use TWO canvases. 
-           1. 'bg-layer' displays the image.
-           2. 'sign-layer' sits on top for drawing.
-        */
-        canvas { display: block; width: 100%; height: auto; }
-        #sign-layer { position: absolute; top: 0; left: 0; }
+        /* CONTAINERS */
+        .card { background: white; width: 100%; max-width: 600px; padding: 15px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        h2 { margin: 0 0 10px 0; font-size: 1.1rem; color: #111827; text-align: center; }
 
-        /* Controls */
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
-        .btn { padding: 12px; border: none; border-radius: 8px; font-weight: 600; font-size: 1rem; cursor: pointer; width: 100%; }
-        .btn-clear { background: #fee2e2; color: #991b1b; }
-        .btn-camera { background: #3b82f6; color: white; grid-column: span 2; }
-        .btn-finish { background: #10b981; color: white; grid-column: span 2; margin-top: 10px; }
+        /* UPLOAD STEP */
+        .upload-zone { border: 2px dashed #cbd5e1; border-radius: 8px; padding: 40px 20px; text-align: center; background: #f8fafc; cursor: pointer; transition: 0.2s; }
+        .upload-zone:active { background: #e2e8f0; border-color: #94a3b8; }
         
-        /* Camera Preview */
-        #camera-zone { display: none; margin-top: 15px; text-align: center; background: #000; padding: 10px; border-radius: 12px; }
-        video { width: 100%; max-height: 250px; border-radius: 8px; transform: scaleX(-1); object-fit: cover; }
+        /* SIGNING WORKSPACE (The Fix for Offset) */
+        /* We stack the image and canvas exactly on top of each other */
+        #workspace-container { position: relative; width: 100%; overflow: hidden; border: 1px solid #e5e7eb; touch-action: none; display: none; }
         
-        .hidden { display: none; }
-        .instructions { font-size: 0.85rem; color: #6b7280; text-align: center; margin-bottom: 10px; }
+        /* The Image shown on screen */
+        #preview-img { display: block; width: 100%; height: auto; pointer-events: none; user-select: none; }
+        
+        /* The Canvas where you sign (Absolute on top) */
+        #pad-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+
+        /* CONTROLS */
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        button { padding: 14px; border: none; border-radius: 8px; font-weight: 600; font-size: 0.95rem; cursor: pointer; width: 100%; }
+        .btn-gray { background: #f3f4f6; color: #374151; }
+        .btn-blue { background: #3b82f6; color: white; }
+        .btn-green { background: #10b981; color: white; grid-column: span 2; margin-top: 5px; }
+        
+        /* CAMERA & SELFIE */
+        #camera-box { display: none; margin-top: 15px; background: black; border-radius: 8px; overflow: hidden; position: relative; }
+        video { width: 100%; height: 250px; object-fit: cover; transform: scaleX(-1); display: block; }
+        .overlay-text { position: absolute; bottom: 10px; left: 0; width: 100%; text-align: center; color: white; font-size: 0.8rem; opacity: 0.8; }
+
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
 
-<div class="container" id="step-1">
-    <h2>1. Select Document</h2>
-    <div class="upload-box" onclick="document.getElementById('file-input').click()">
-        <span style="font-size: 2rem;">📂</span><br>
-        <strong>Tap to Upload Image</strong><br>
-        <span style="font-size:0.8rem; color:#666">(Screenshot or Photo)</span>
-        <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleImageUpload(this)">
-    </div>
-</div>
-
-<div class="container hidden" id="step-2">
-    <h2 id="page-title">2. Sign Document</h2>
-    <p class="instructions">Drag finger to sign. Pinch to zoom not supported.</p>
-    
-    <div id="workspace">
-        <canvas id="bg-layer"></canvas>
-        <canvas id="sign-layer"></canvas>
+    <div class="card" id="step-upload">
+        <h2>📂 Upload Document</h2>
+        <div class="upload-zone" onclick="document.getElementById('file-in').click()">
+            <div style="font-size: 2rem; margin-bottom: 5px;">📄</div>
+            <strong>Tap to Select Image</strong>
+            <div style="font-size: 0.8rem; color: #64748b; margin-top: 5px;">(JPG, PNG, Screenshot)</div>
+        </div>
+        <input type="file" id="file-in" accept="image/*" hidden onchange="handleFile(this)">
     </div>
 
-    <div class="controls">
-        <button class="btn btn-clear" onclick="clearPad()">Clear Sign</button>
-        <button class="btn" style="background:#f3f4f6; color:#374151;" onclick="restart()">Cancel</button>
-        <button class="btn btn-camera" onclick="startCamera()">📸 Add Selfie Verification</button>
-    </div>
+    <div class="card hidden" id="step-sign">
+        <h2 id="status-txt">✍️ Sign Here</h2>
+        
+        <div id="workspace-container">
+            <img id="preview-img" src="" alt="Document">
+            <canvas id="pad-canvas"></canvas>
+        </div>
 
-    <div id="camera-zone">
-        <video id="video-feed" autoplay playsinline></video>
-        <button class="btn" style="background:white; color:black; margin-top:10px;" onclick="captureSelfie()">⚪ Take Photo</button>
+        <div id="camera-box">
+            <video id="video-feed" autoplay playsinline></video>
+            <div class="overlay-text">Position face in view</div>
+        </div>
+
+        <div class="btn-grid">
+            <button class="btn-gray" onclick="clearSign()">Clear</button>
+            <button class="btn-blue" onclick="toggleCamera()" id="cam-btn">📸 Selfie</button>
+            <button class="btn-green" onclick="finishAndDownload()">✅ Finish & Download</button>
+        </div>
+        
+        <p style="text-align:center; font-size:0.75rem; color:#9ca3af; margin-top:10px;">
+            Session ID: <span id="session-id">...</span>
+        </p>
     </div>
-    
-    <button class="btn btn-finish" onclick="generateDocument()">✅ Finish & Download</button>
-    <p id="status-msg" style="text-align:center; margin-top:10px; color:#10b981; display:none;">Processing...</p>
-</div>
 
 <script>
-    let bgCanvas = document.getElementById('bg-layer');
-    let signCanvas = document.getElementById('sign-layer');
-    let ctxBg = bgCanvas.getContext('2d');
+    // --- VARIABLES ---
+    let originalFile = null;  // Keeps the high-res original
+    let originalW = 0, originalH = 0;
     let signaturePad;
-    
-    let originalImg = new Image();
-    let selfieImg = null; // Stores the captured selfie
-    let scaleRatio = 1; // Relationship between screen pixels and image pixels
+    let selfieCanvas = null;
+    let uniqueId = "ID-" + Math.random().toString(36).substr(2, 9).toUpperCase(); // "ID-X9A2..."
 
-    // --- 1. HANDLE UPLOAD & SETUP ---
-    function handleImageUpload(input) {
-        if (input.files && input.files[0]) {
-            let reader = new FileReader();
-            reader.onload = function(e) {
-                originalImg.onload = function() {
-                    setupWorkspace();
-                };
-                originalImg.src = e.target.result;
-            }
-            reader.readAsDataURL(input.files[0]);
-        }
+    // --- 1. SETUP & UPLOAD ---
+    document.getElementById('session-id').innerText = uniqueId;
+
+    function handleFile(input) {
+        if (!input.files[0]) return;
+        const file = input.files[0];
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            // Load image into a hidden object to get REAL dimensions
+            const img = new Image();
+            img.onload = function() {
+                originalW = img.width;
+                originalH = img.height;
+                startSigningUI(e.target.result);
+            };
+            img.src = e.target.result;
+            originalFile = img; 
+        };
+        reader.readAsDataURL(file);
     }
 
-    function setupWorkspace() {
-        document.getElementById('step-1').classList.add('hidden');
-        document.getElementById('step-2').classList.remove('hidden');
-        
-        let workspace = document.getElementById('workspace');
-        workspace.style.display = 'block';
+    function startSigningUI(imgSrc) {
+        document.getElementById('step-upload').classList.add('hidden');
+        document.getElementById('step-sign').classList.remove('hidden');
 
-        // 1. Get the width of the user's phone screen
-        let screenWidth = workspace.offsetWidth;
+        const preview = document.getElementById('preview-img');
+        preview.src = imgSrc;
         
-        // 2. Calculate the aspect ratio of the image
-        let aspectRatio = originalImg.height / originalImg.width;
-        
-        // 3. Set the canvas VISUAL size to fit the phone screen
-        let displayHeight = screenWidth * aspectRatio;
-        
-        bgCanvas.style.width = screenWidth + "px";
-        bgCanvas.style.height = displayHeight + "px";
-        signCanvas.style.width = screenWidth + "px";
-        signCanvas.style.height = displayHeight + "px";
-
-        // 4. Set the INTERNAL resolution to the high-res image size
-        // This ensures the final PDF/Image is crisp, not blurry
-        bgCanvas.width = originalImg.width;
-        bgCanvas.height = originalImg.height;
-        signCanvas.width = originalImg.width;
-        signCanvas.height = originalImg.height;
-
-        // 5. Draw the image onto the background canvas
-        ctxBg.drawImage(originalImg, 0, 0);
-
-        // 6. Setup Signature Pad with SCALING
-        // This fixes the "signs in wrong place" bug. 
-        // We tell the pad: "The screen is small, but the canvas is huge."
-        scaleRatio = originalImg.width / screenWidth;
-        
-        signaturePad = new SignaturePad(signCanvas, {
-            minWidth: 2 * scaleRatio, // Scale pen thickness up
-            maxWidth: 5 * scaleRatio,
-            penColor: 'blue'
-        });
-        
-        // Crucial: Map screen touch coordinates to large canvas coordinates
-        // We override the internal data handler of SignaturePad
-        signaturePad.fromData = function(pointGroups) {
-             // Default implementation
-             const self = this;
-             self._fromData(
-                pointGroups,
-                ({ color, curve }) => self._drawCurve({ color, curve }),
-                ({ color, point }) => self._drawDot({ color, point })
-             );
-        }
-    }
-
-    // Fix Coordinate Mapping for SignaturePad (The Magic Fix)
-    // We essentially don't need to do complex math if we rely on the 
-    // canvas internal width vs CSS width browser behavior, 
-    // BUT we must resize the context scale for the pad to read it right.
-    // Actually, simply setting canvas.width to high-res and style.width to screen
-    // works IF we scale the 2d context. 
-    
-    // Instead of complex context scaling, we will rely on SignaturePad's 
-    // internal coordinate system which listens to pointer events.
-    // The library automatically handles CSS resizing relative to internal width
-    // IF we re-initialize it correctly. 
-    
-    function clearPad() {
-        signaturePad.clear();
-    }
-
-    function restart() {
-        location.reload();
-    }
-
-    // --- 2. CAMERA LOGIC ---
-    function startCamera() {
-        document.getElementById('camera-zone').style.display = 'block';
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
-            .then(stream => {
-                document.getElementById('video-feed').srcObject = stream;
-            })
-            .catch(err => alert("Camera permission denied."));
-    }
-
-    function captureSelfie() {
-        let video = document.getElementById('video-feed');
-        // Create a temporary canvas to grab the frame
-        let capCanvas = document.createElement('canvas');
-        capCanvas.width = 400; 
-        capCanvas.height = 400 * (video.videoHeight / video.videoWidth);
-        let ctx = capCanvas.getContext('2d');
-        
-        // Flip horizontal for natural selfie look
-        ctx.translate(capCanvas.width, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
-        
-        selfieImg = capCanvas; // Save this canvas for later
-        
-        // Stop camera to save battery
-        video.srcObject.getTracks().forEach(track => track.stop());
-        document.getElementById('camera-zone').style.display = 'none';
-        
-        // Visual feedback
-        document.querySelector('.btn-camera').innerText = "✅ Selfie Saved";
-        document.querySelector('.btn-camera').style.background = "#10b981";
-    }
-
-    // --- 3. GENERATE FINAL IMAGE ---
-    function generateDocument() {
-        if (signaturePad.isEmpty()) { alert("Please sign the document first."); return; }
-        document.getElementById('status-msg').style.display = 'block';
-
-        // Wait a split second for UI to update
+        // Wait for preview to render to get screen dimensions
         setTimeout(() => {
-            // A. Prepare Dimensions based on High-Res Image
-            const w = originalImg.width;
-            const h = originalImg.height;
-            const footerHeight = w * 0.4; // Footer is 40% of page width (keeps it readable)
-
-            // B. Create Final Canvas
-            const finalCanvas = document.createElement('canvas');
-            finalCanvas.width = w;
-            finalCanvas.height = h + footerHeight; 
-            const ctx = finalCanvas.getContext('2d');
-
-            // C. Fill White Background
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
-
-            // D. Draw Document
-            ctx.drawImage(bgCanvas, 0, 0);
+            const workspace = document.getElementById('workspace-container');
+            const canvas = document.getElementById('pad-canvas');
             
-            // E. Draw Signature
-            ctx.drawImage(signCanvas, 0, 0);
+            // Match canvas size to the VISUAL image size (Screen size)
+            canvas.width = workspace.offsetWidth;
+            canvas.height = workspace.offsetHeight;
 
-            // F. Draw Footer Background
-            const footerY = h;
-            ctx.fillStyle = "#f3f4f6";
-            ctx.fillRect(0, footerY, w, footerHeight);
+            // Initialize Pad with THINNER lines for mobile
+            signaturePad = new SignaturePad(canvas, {
+                minWidth: 1,  // Thin line
+                maxWidth: 2.5, 
+                penColor: "blue",
+                velocityFilterWeight: 0.7
+            });
+        }, 100);
+    }
+
+    function clearSign() { signaturePad.clear(); }
+
+    // --- 2. CAMERA ---
+    let streamRef = null;
+    function toggleCamera() {
+        const box = document.getElementById('camera-box');
+        const btn = document.getElementById('cam-btn');
+
+        if (box.style.display === "block") {
+            // Capture Photo
+            const video = document.getElementById('video-feed');
+            const c = document.createElement('canvas');
+            c.width = 300; 
+            c.height = 300 * (video.videoHeight / video.videoWidth);
+            const ctx = c.getContext('2d');
+            ctx.translate(c.width, 0); ctx.scale(-1, 1); // Mirror
+            ctx.drawImage(video, 0, 0, c.width, c.height);
             
-            // G. Draw Text (Dynamic Scaling)
-            // We set font size based on Image Width so it is never too small
-            const fontSizeHeader = Math.floor(w * 0.05); // 5% of width
-            const fontSizeBody = Math.floor(w * 0.035);  // 3.5% of width
-            const padding = Math.floor(w * 0.05);
+            selfieCanvas = c; // Store photo
+            
+            // Stop Camera
+            streamRef.getTracks().forEach(t => t.stop());
+            box.style.display = "none";
+            btn.innerText = "✅ Selfie Saved";
+            btn.style.background = "#10b981";
+        } else {
+            // Start Camera
+            box.style.display = "block";
+            btn.innerText = "⚪ Tap to Snap";
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+                .then(s => { 
+                    document.getElementById('video-feed').srcObject = s; 
+                    streamRef = s;
+                })
+                .catch(e => alert("Camera denied."));
+        }
+    }
 
-            ctx.fillStyle = "#111827";
-            ctx.font = `bold ${fontSizeHeader}px sans-serif`;
-            ctx.fillText("DIGITAL SIGNATURE CERTIFICATE", padding, footerY + (padding * 1.5));
+    // --- 3. FINAL PROCESSING (THE MATH PART) ---
+    function finishAndDownload() {
+        if (signaturePad.isEmpty()) { alert("Please sign first."); return; }
 
-            ctx.font = `${fontSizeBody}px sans-serif`;
-            ctx.fillStyle = "#374151";
-            let lineHeight = fontSizeBody * 1.5;
-            let textY = footerY + (padding * 2.5);
+        document.getElementById('status-txt').innerText = "Processing High-Res...";
+        
+        setTimeout(() => {
+            // A. Create HIGH-RES Canvas (Matches original image size)
+            const finalC = document.createElement('canvas');
+            const ctx = finalC.getContext('2d');
+            
+            // Add space for footer (30% of width)
+            const footerH = Math.floor(originalW * 0.35); 
+            finalC.width = originalW;
+            finalC.height = originalH + footerH;
 
-            ctx.fillText("Signed: " + new Date().toLocaleString(), padding, textY);
-            textY += lineHeight;
-            ctx.fillText("Device ID: " + navigator.userAgent.substring(0, 40) + "...", padding, textY);
-            textY += lineHeight;
-            ctx.fillText("IP Trace: Verified (Client-Side)", padding, textY);
+            // B. Draw White BG & Original Image
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, finalC.width, finalC.height);
+            ctx.drawImage(originalFile, 0, 0);
 
-            // H. Draw Selfie (If exists)
-            if (selfieImg) {
-                const selfieW = w * 0.25; // Selfie is 25% of page width
-                const selfieH = selfieW * (selfieImg.height / selfieImg.width);
-                const selfieX = w - selfieW - padding;
-                const selfieY = footerY + padding;
+            // C. Draw Signature (SCALED UP)
+            // We calculate how much bigger the original image is compared to the phone screen
+            const screenW = document.getElementById('pad-canvas').width;
+            const ratio = originalW / screenW;
+            
+            // We draw the signature canvas onto the big canvas, scaling it up
+            ctx.drawImage(document.getElementById('pad-canvas'), 0, 0, originalW, originalH);
+
+            // D. Draw Footer Info
+            const padding = originalW * 0.04;
+            let currentY = originalH + padding;
+            
+            // Background for footer
+            ctx.fillStyle = "#f8fafc";
+            ctx.fillRect(0, originalH, originalW, footerH);
+
+            // TEXT SETTINGS (Relative to image size)
+            const fontSizeBig = Math.floor(originalW * 0.04); // 4% of width
+            const fontSizeSmall = Math.floor(originalW * 0.025); // 2.5% of width
+            
+            ctx.fillStyle = "#0f172a";
+            ctx.font = `bold ${fontSizeBig}px sans-serif`;
+            ctx.fillText("DIGITAL SIGNATURE RECORD", padding, currentY + fontSizeBig);
+            
+            currentY += (fontSizeBig * 1.8);
+            ctx.font = `${fontSizeSmall}px monospace`; // Monospace for ID
+            ctx.fillStyle = "#334155";
+            
+            ctx.fillText(`Date: ${new Date().toLocaleString()}`, padding, currentY);
+            currentY += (fontSizeSmall * 1.5);
+            ctx.fillText(`Signer ID: ${uniqueId}`, padding, currentY); // Custom ID
+            currentY += (fontSizeSmall * 1.5);
+            ctx.fillText(`IP Trace: Verified (Client-Side)`, padding, currentY);
+
+            // E. Draw Selfie (Bottom Right)
+            if (selfieCanvas) {
+                const sW = originalW * 0.25; // Selfie is 25% of width
+                const sH = sW * (selfieCanvas.height / selfieCanvas.width);
+                const sX = originalW - sW - padding;
+                const sY = originalH + padding;
                 
-                ctx.drawImage(selfieImg, selfieX, selfieY, selfieW, selfieH);
-                
-                ctx.font = `bold ${fontSizeBody*0.8}px sans-serif`;
-                ctx.textAlign = "center";
-                ctx.fillText("Signer Photo", selfieX + (selfieW/2), selfieY + selfieH + fontSizeBody);
+                ctx.drawImage(selfieCanvas, sX, sY, sW, sH);
+                ctx.strokeStyle = "#cbd5e1";
+                ctx.lineWidth = originalW * 0.005;
+                ctx.strokeRect(sX, sY, sW, sH);
             }
 
-            // I. Download
+            // F. Download
             const link = document.createElement('a');
-            link.download = 'Signed_Doc_' + Date.now() + '.png';
-            link.href = finalCanvas.toDataURL('image/png');
+            link.download = `Signed_${uniqueId}.png`;
+            link.href = finalC.toDataURL("image/jpeg", 0.85); // Compress slightly
             link.click();
             
-            document.getElementById('status-msg').style.display = 'none';
-        }, 100);
+            document.getElementById('status-txt').innerText = "✅ Done";
+        }, 50);
     }
 </script>
 
