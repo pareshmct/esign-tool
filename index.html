@@ -11,16 +11,16 @@
         body { font-family: -apple-system, sans-serif; background: #f3f4f6; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
         
         /* CONTAINERS */
-        .card { background: white; width: 100%; max-width: 600px; padding: 15px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        /* Added !important to background to prevent Dark Mode from making it black */
+        .card { background: white !important; width: 100%; max-width: 600px; padding: 15px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; color: black; }
         h2 { margin: 0 0 10px 0; font-size: 1.1rem; color: #111827; text-align: center; }
 
         /* UPLOAD STEP */
         .upload-zone { border: 2px dashed #cbd5e1; border-radius: 8px; padding: 40px 20px; text-align: center; background: #f8fafc; cursor: pointer; transition: 0.2s; }
         .upload-zone:active { background: #e2e8f0; border-color: #94a3b8; }
         
-        /* SIGNING WORKSPACE (The Fix for Offset) */
-        /* We stack the image and canvas exactly on top of each other */
-        #workspace-container { position: relative; width: 100%; overflow: hidden; border: 1px solid #e5e7eb; touch-action: none; display: none; }
+        /* SIGNING WORKSPACE - FIXED: Removed 'display:none' */
+        #workspace-container { position: relative; width: 100%; overflow: hidden; border: 1px solid #e5e7eb; touch-action: none; background: #ddd; }
         
         /* The Image shown on screen */
         #preview-img { display: block; width: 100%; height: auto; pointer-events: none; user-select: none; }
@@ -59,7 +59,7 @@
         <h2 id="status-txt">✍️ Sign Here</h2>
         
         <div id="workspace-container">
-            <img id="preview-img" src="" alt="Document">
+            <img id="preview-img" src="" alt="Document Loading...">
             <canvas id="pad-canvas"></canvas>
         </div>
 
@@ -87,9 +87,9 @@
     let selfieCanvas = null;
     let uniqueId = "ID-" + Math.random().toString(36).substr(2, 9).toUpperCase(); // "ID-X9A2..."
 
-    // --- 1. SETUP & UPLOAD ---
     document.getElementById('session-id').innerText = uniqueId;
 
+    // --- 1. SETUP & UPLOAD ---
     function handleFile(input) {
         if (!input.files[0]) return;
         const file = input.files[0];
@@ -110,32 +110,37 @@
     }
 
     function startSigningUI(imgSrc) {
+        // Show the signing screen
         document.getElementById('step-upload').classList.add('hidden');
         document.getElementById('step-sign').classList.remove('hidden');
 
+        // Set the image source
         const preview = document.getElementById('preview-img');
         preview.src = imgSrc;
         
-        // Wait for preview to render to get screen dimensions
+        // Wait 100ms for the div to resize to fit the image, then size the canvas
         setTimeout(() => {
             const workspace = document.getElementById('workspace-container');
             const canvas = document.getElementById('pad-canvas');
             
-            // Match canvas size to the VISUAL image size (Screen size)
+            // Critical: Make canvas exactly the same size as the visible image
+            // workspace.offsetWidth gives the pixel width of the box on your phone
             canvas.width = workspace.offsetWidth;
-            canvas.height = workspace.offsetHeight;
+            canvas.height = workspace.offsetHeight; // This will now work because workspace is visible
 
             // Initialize Pad with THINNER lines for mobile
             signaturePad = new SignaturePad(canvas, {
-                minWidth: 1,  // Thin line
+                minWidth: 1,  
                 maxWidth: 2.5, 
                 penColor: "blue",
                 velocityFilterWeight: 0.7
             });
-        }, 100);
+        }, 200);
     }
 
-    function clearSign() { signaturePad.clear(); }
+    function clearSign() { 
+        if(signaturePad) signaturePad.clear(); 
+    }
 
     // --- 2. CAMERA ---
     let streamRef = null;
@@ -169,22 +174,22 @@
                     document.getElementById('video-feed').srcObject = s; 
                     streamRef = s;
                 })
-                .catch(e => alert("Camera denied."));
+                .catch(e => alert("Camera denied. Check browser permissions."));
         }
     }
 
-    // --- 3. FINAL PROCESSING (THE MATH PART) ---
+    // --- 3. FINAL PROCESSING (SCALING FIX) ---
     function finishAndDownload() {
-        if (signaturePad.isEmpty()) { alert("Please sign first."); return; }
+        if (!signaturePad || signaturePad.isEmpty()) { alert("Please sign first."); return; }
 
-        document.getElementById('status-txt').innerText = "Processing High-Res...";
+        document.getElementById('status-txt').innerText = "Processing...";
         
         setTimeout(() => {
             // A. Create HIGH-RES Canvas (Matches original image size)
             const finalC = document.createElement('canvas');
             const ctx = finalC.getContext('2d');
             
-            // Add space for footer (30% of width)
+            // Add space for footer (35% of width to ensure text fits)
             const footerH = Math.floor(originalW * 0.35); 
             finalC.width = originalW;
             finalC.height = originalH + footerH;
@@ -195,14 +200,14 @@
             ctx.drawImage(originalFile, 0, 0);
 
             // C. Draw Signature (SCALED UP)
-            // We calculate how much bigger the original image is compared to the phone screen
+            // We scale the drawing from the mobile screen size to the full image size
             const screenW = document.getElementById('pad-canvas').width;
-            const ratio = originalW / screenW;
+            const ratio = originalW / screenW; // e.g., Image is 3x bigger than screen
             
-            // We draw the signature canvas onto the big canvas, scaling it up
+            // Draw the signature canvas onto the big canvas
             ctx.drawImage(document.getElementById('pad-canvas'), 0, 0, originalW, originalH);
 
-            // D. Draw Footer Info
+            // D. Draw Footer Info (Bold & Large)
             const padding = originalW * 0.04;
             let currentY = originalH + padding;
             
@@ -211,22 +216,22 @@
             ctx.fillRect(0, originalH, originalW, footerH);
 
             // TEXT SETTINGS (Relative to image size)
-            const fontSizeBig = Math.floor(originalW * 0.04); // 4% of width
-            const fontSizeSmall = Math.floor(originalW * 0.025); // 2.5% of width
+            const fontSizeBig = Math.floor(originalW * 0.045); // 4.5% of width
+            const fontSizeSmall = Math.floor(originalW * 0.030); // 3% of width
             
             ctx.fillStyle = "#0f172a";
             ctx.font = `bold ${fontSizeBig}px sans-serif`;
-            ctx.fillText("DIGITAL SIGNATURE RECORD", padding, currentY + fontSizeBig);
+            ctx.fillText("DIGITAL SIGNATURE CERTIFICATE", padding, currentY + fontSizeBig);
             
             currentY += (fontSizeBig * 1.8);
-            ctx.font = `${fontSizeSmall}px monospace`; // Monospace for ID
+            ctx.font = `${fontSizeSmall}px monospace`;
             ctx.fillStyle = "#334155";
             
             ctx.fillText(`Date: ${new Date().toLocaleString()}`, padding, currentY);
             currentY += (fontSizeSmall * 1.5);
-            ctx.fillText(`Signer ID: ${uniqueId}`, padding, currentY); // Custom ID
+            ctx.fillText(`Ref ID: ${uniqueId}`, padding, currentY);
             currentY += (fontSizeSmall * 1.5);
-            ctx.fillText(`IP Trace: Verified (Client-Side)`, padding, currentY);
+            ctx.fillText(`Device Trace: Verified (Client-Side)`, padding, currentY);
 
             // E. Draw Selfie (Bottom Right)
             if (selfieCanvas) {
@@ -243,12 +248,12 @@
 
             // F. Download
             const link = document.createElement('a');
-            link.download = `Signed_${uniqueId}.png`;
-            link.href = finalC.toDataURL("image/jpeg", 0.85); // Compress slightly
+            link.download = `Signed_${uniqueId}.jpg`;
+            link.href = finalC.toDataURL("image/jpeg", 0.9); // High Quality JPG
             link.click();
             
             document.getElementById('status-txt').innerText = "✅ Done";
-        }, 50);
+        }, 100);
     }
 </script>
 
